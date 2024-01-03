@@ -18,6 +18,15 @@ if(WASMEDGE_PLUGIN_IMAGE)
   endif()
 endif()
 
+if(WASMEDGE_PLUGIN_IMAGE)
+  # Only Linux and MacOS support wasmedge_image now.
+  if(CMAKE_SYSTEM_NAME MATCHES "Linux|Darwin")
+    add_subdirectory(wasi_ocr)
+  else()
+    message(WARNING "Only Linux and Darwin platforms support WasmEdge_Image plug-in now.")
+  endif()
+endif()
+
 if(WASMEDGE_PLUGIN_TENSORFLOW)
   # Only Linux and MacOS support wasmedge_tensorflow now.
   if(CMAKE_SYSTEM_NAME MATCHES "Linux|Darwin")
