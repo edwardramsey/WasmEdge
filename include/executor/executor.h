@@ -733,6 +733,13 @@ private:
       ExecutionContext.CostTable = Stat->getCostTable().data();
       ExecutionContext.Gas = &Stat->getTotalCostRef();
       ExecutionContext.GasLimit = Stat->getCostLimit();
+
+      ExecutionContext.InstrCntReg = &Stat->getInstrCntRegRef();
+      ExecutionContext.InstrCntMem = &Stat->getInstrCntMemRef();
+      ExecutionContext.InstrCntControl = &Stat->getInstrCntControlRef();
+      ExecutionContext.InstrCnt32IntOp = &Stat->getInstrCnt32IntOpRef();
+      ExecutionContext.InstrCnt64IntOp = &Stat->getInstrCnt64IntOpRef();
+      ExecutionContext.InstrCntOther = &Stat->getInstrCntOtherRef();
     }
     CurrentStack = &StackMgr;
   }
@@ -746,6 +753,13 @@ private:
     std::atomic_uint64_t *Gas;
     uint64_t GasLimit;
     std::atomic_uint32_t *StopToken;
+
+    std::atomic_uint64_t *InstrCntReg;
+    std::atomic_uint64_t *InstrCntMem;
+    std::atomic_uint64_t *InstrCntControl;
+    std::atomic_uint64_t *InstrCnt32IntOp;
+    std::atomic_uint64_t *InstrCnt64IntOp;
+    std::atomic_uint64_t *InstrCntOther;
   };
 
   /// Pointer to current object.

@@ -83,6 +83,13 @@ public:
   Span<const uint64_t> getCostTable() const noexcept { return CostTab; }
   Span<uint64_t> getCostTable() noexcept { return CostTab; }
 
+  std::atomic_uint64_t &getInstrCntRegRef() { return InsStatisticsDetails.InstrCntReg; }
+  std::atomic_uint64_t &getInstrCntMemRef() { return InsStatisticsDetails.InstrCntMem; }
+  std::atomic_uint64_t &getInstrCntControlRef() { return InsStatisticsDetails.InstrCntControl; }
+  std::atomic_uint64_t &getInstrCnt32IntOpRef() { return InsStatisticsDetails.InstrCnt32IntOp; }
+  std::atomic_uint64_t &getInstrCnt64IntOpRef() { return InsStatisticsDetails.InstrCnt64IntOp; }
+  std::atomic_uint64_t &getInstrCntOtherRef() { return InsStatisticsDetails.InstrCntOther; }
+
   /// Adder of instruction costs.
   bool addInstrCost(OpCode Code) {
     addInsDetails(Code);

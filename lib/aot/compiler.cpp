@@ -406,6 +406,19 @@ struct WasmEdge::AOT::Compiler::CompileContext {
                 Int64Ty,
                 // StopToken
                 Int32PtrTy,
+                // InsDetails
+                // InstrCntReg
+                Int64PtrTy,
+                // InstrCntMem
+                Int64PtrTy,
+                // InstrCntControl
+                Int64PtrTy,
+                // InstrCnt32IntOp
+                Int64PtrTy,
+                // InstrCnt64IntOp
+                Int64PtrTy,
+                // InstrCntOther
+                Int64PtrTy,
             })),
         ExecCtxPtrTy(ExecCtxTy.getPointerTo()),
         IntrinsicsTableTy(LLVM::Type::getArrayType(
@@ -522,6 +535,32 @@ struct WasmEdge::AOT::Compiler::CompileContext {
                            LLVM::Value ExecCtx) noexcept {
     return Builder.createExtractValue(ExecCtx, 6);
   }
+
+  LLVM::Value getInstrCntReg(LLVM::Builder &Builder,
+                           LLVM::Value ExecCtx) noexcept {
+    return Builder.createExtractValue(ExecCtx, 7);
+  }
+  LLVM::Value getInstrCntMem(LLVM::Builder &Builder,
+                             LLVM::Value ExecCtx) noexcept {
+    return Builder.createExtractValue(ExecCtx, 8);
+  }
+  LLVM::Value getInstrCntControl(LLVM::Builder &Builder,
+                             LLVM::Value ExecCtx) noexcept {
+    return Builder.createExtractValue(ExecCtx, 9);
+  }
+  LLVM::Value getInstrCnt32IntOp(LLVM::Builder &Builder,
+                             LLVM::Value ExecCtx) noexcept {
+    return Builder.createExtractValue(ExecCtx, 10);
+  }
+  LLVM::Value getInstrCnt64IntOp(LLVM::Builder &Builder,
+                             LLVM::Value ExecCtx) noexcept {
+    return Builder.createExtractValue(ExecCtx, 11);
+  }
+  LLVM::Value getInstrCntOther(LLVM::Builder &Builder,
+                                 LLVM::Value ExecCtx) noexcept {
+    return Builder.createExtractValue(ExecCtx, 12);
+  }
+
   LLVM::FunctionCallee getIntrinsic(LLVM::Builder &Builder,
                                     AST::Module::Intrinsics Index,
                                     LLVM::Type Ty) noexcept {
@@ -667,6 +706,19 @@ public:
       if (InstructionCounting) {
         LocalInstrCount = Builder.createAlloca(Context.Int64Ty);
         Builder.createStore(LLContext.getInt64(0), LocalInstrCount);
+
+        LocalInstrCntReg = Builder.createAlloca(Context.Int64Ty);
+        Builder.createStore(LLContext.getInt64(0), LocalInstrCntReg);
+        LocalInstrCntMem = Builder.createAlloca(Context.Int64Ty);
+        Builder.createStore(LLContext.getInt64(0), LocalInstrCntMem);
+        LocalInstrCntControl = Builder.createAlloca(Context.Int64Ty);
+        Builder.createStore(LLContext.getInt64(0), LocalInstrCntControl);
+        LocalInstrCnt32IntOp = Builder.createAlloca(Context.Int64Ty);
+        Builder.createStore(LLContext.getInt64(0), LocalInstrCnt32IntOp);
+        LocalInstrCnt64IntOp = Builder.createAlloca(Context.Int64Ty);
+        Builder.createStore(LLContext.getInt64(0), LocalInstrCnt64IntOp);
+        LocalInstrCntOther = Builder.createAlloca(Context.Int64Ty);
+        Builder.createStore(LLContext.getInt64(0), LocalInstrCntOther);
       }
 
       if (GasMeasuring) {
@@ -3185,6 +3237,354 @@ public:
         Builder.createStore(NewGas, LocalGas);
       }
 
+      if(LocalInstrCount) {
+        switch (Instr.getOpCode()) {
+        case OpCode::Local__get:
+        case OpCode::Local__set:
+        case OpCode::Local__tee:
+        case OpCode::Global__get:
+        case OpCode::Global__set: {
+          Builder.createStore(
+            Builder.createAdd(Builder.createLoad(Context.Int64Ty, LocalInstrCntReg),
+              LLContext.getInt64(1)),
+              LocalInstrCntReg);
+
+          auto Store [[maybe_unused]] = Builder.createAtomicRMW(
+              LLVMAtomicRMWBinOpAdd, Context.getInstrCntReg(Builder, ExecCtx),
+              Builder.createLoad(Context.Int64Ty, LocalInstrCntReg),
+              LLVMAtomicOrderingMonotonic);
+#if LLVM_VERSION_MAJOR >= 13
+          Store.setAlignment(8);
+#endif
+          Builder.createStore(LLContext.getInt64(0), LocalInstrCntReg);
+          break;
+        }
+        case  OpCode::I32__load:
+        case OpCode::I64__load:
+        case OpCode::F32__load:
+        case OpCode::F64__load:
+        case OpCode::I32__load8_s:
+        case OpCode::I32__load8_u:
+        case OpCode::I32__load16_s:
+        case OpCode::I32__load16_u:
+        case OpCode::I64__load8_s:
+        case OpCode::I64__load8_u:
+        case OpCode::I64__load16_s:
+        case OpCode::I64__load16_u:
+        case OpCode::I64__load32_s:
+        case OpCode::I64__load32_u:
+        case OpCode::I32__store:
+        case OpCode::I64__store:
+        case OpCode::F32__store:
+        case OpCode::F64__store:
+        case OpCode::I32__store8:
+        case OpCode::I32__store16:
+        case OpCode::I64__store8:
+        case OpCode::I64__store16:
+        case OpCode::I64__store32:
+        case OpCode::Memory__size:
+        case OpCode::Memory__grow: {
+          Builder.createStore(
+            Builder.createAdd(Builder.createLoad(Context.Int64Ty, LocalInstrCntMem),
+                      LLContext.getInt64(1)),
+              LocalInstrCntMem);
+          auto Store [[maybe_unused]] = Builder.createAtomicRMW(
+              LLVMAtomicRMWBinOpAdd, Context.getInstrCntMem(Builder, ExecCtx),
+              Builder.createLoad(Context.Int64Ty, LocalInstrCntMem),
+              LLVMAtomicOrderingMonotonic);
+#if LLVM_VERSION_MAJOR >= 13
+          Store.setAlignment(8);
+#endif
+          Builder.createStore(LLContext.getInt64(0), LocalInstrCntMem);
+          break;
+        }
+        case OpCode::Unreachable:
+        case OpCode::Nop:
+        case OpCode::Block:
+        case OpCode::Loop:
+        case OpCode::If:
+        case OpCode::Else:
+        case OpCode::End:
+        case OpCode::Br:
+        case OpCode::Br_if:
+        case OpCode::Br_table:
+        case OpCode::Return:
+        case OpCode::Call:
+        case OpCode::Call_indirect:
+        case OpCode::Return_call:
+        case OpCode::Return_call_indirect:
+        case OpCode::Call_ref:
+        case OpCode::Return_call_ref: {
+          Builder.createStore(
+            Builder.createAdd(Builder.createLoad(Context.Int64Ty, LocalInstrCntControl),
+                      LLContext.getInt64(1)),
+            LocalInstrCntControl);
+          auto Store [[maybe_unused]] = Builder.createAtomicRMW(
+              LLVMAtomicRMWBinOpAdd, Context.getInstrCntControl(Builder, ExecCtx),
+              Builder.createLoad(Context.Int64Ty, LocalInstrCntControl),
+              LLVMAtomicOrderingMonotonic);
+#if LLVM_VERSION_MAJOR >= 13
+          Store.setAlignment(8);
+#endif
+          Builder.createStore(LLContext.getInt64(0), LocalInstrCntControl);
+          break;
+        }
+        case OpCode::I32__eqz:
+        case OpCode::I32__eq:
+        case OpCode::I32__ne:
+        case OpCode::I32__lt_s:
+        case OpCode::I32__lt_u:
+        case OpCode::I32__gt_s:
+        case OpCode::I32__gt_u:
+        case OpCode::I32__le_s:
+        case OpCode::I32__le_u:
+        case OpCode::I32__ge_s:
+        case OpCode::I32__ge_u:
+        case OpCode::F32__eq:
+        case OpCode::F32__ne:
+        case OpCode::F32__lt:
+        case OpCode::F32__gt:
+        case OpCode::F32__le:
+        case OpCode::F32__ge:
+        case OpCode::I32__clz:
+        case OpCode::I32__ctz:
+        case OpCode::I32__popcnt:
+        case OpCode::I32__add:
+        case OpCode::I32__sub:
+        case OpCode::I32__mul:
+        case OpCode::I32__div_s:
+        case OpCode::I32__div_u:
+        case OpCode::I32__rem_s:
+        case OpCode::I32__rem_u:
+        case OpCode::I32__and:
+        case OpCode::I32__or:
+        case OpCode::I32__xor:
+        case OpCode::I32__shl:
+        case OpCode::I32__shr_s:
+        case OpCode::I32__shr_u:
+        case OpCode::I32__rotl:
+        case OpCode::I32__rotr:
+        case OpCode::F32__abs:
+        case OpCode::F32__neg:
+        case OpCode::F32__ceil:
+        case OpCode::F32__floor:
+        case OpCode::F32__trunc:
+        case OpCode::F32__nearest:
+        case OpCode::F32__sqrt:
+        case OpCode::F32__add:
+        case OpCode::F32__sub:
+        case OpCode::F32__mul:
+        case OpCode::F32__div:
+        case OpCode::F32__min:
+        case OpCode::F32__max:
+        case OpCode::F32__copysign:
+        case OpCode::I32__wrap_i64:
+        case OpCode::I32__trunc_f32_s:
+        case OpCode::I32__trunc_f32_u:
+        case OpCode::I32__trunc_f64_s:
+        case OpCode::I32__trunc_f64_u:
+        case OpCode::F32__convert_i32_s:
+        case OpCode::F32__convert_i32_u:
+        case OpCode::F32__convert_i64_s:
+        case OpCode::F32__convert_i64_u:
+        case OpCode::F32__demote_f64:
+        case OpCode::I32__reinterpret_f32:
+        case OpCode::F32__reinterpret_i32:
+        case OpCode::I32__extend8_s:
+        case OpCode::I32__extend16_s:
+        case OpCode::I32__trunc_sat_f32_s:
+        case OpCode::I32__trunc_sat_f32_u:
+        case OpCode::I32__trunc_sat_f64_s:
+        case OpCode::I32__trunc_sat_f64_u:
+        case OpCode::I32__atomic__load:
+        case OpCode::I32__atomic__load8_u:
+        case OpCode::I32__atomic__load16_u:
+        case OpCode::I32__atomic__store:
+        case OpCode::I32__atomic__store8:
+        case OpCode::I32__atomic__store16:
+        case OpCode::I32__atomic__rmw__add:
+        case OpCode::I32__atomic__rmw8__add_u:
+        case OpCode::I32__atomic__rmw16__add_u:
+        case OpCode::I32__atomic__rmw__sub:
+        case OpCode::I32__atomic__rmw8__sub_u:
+        case OpCode::I32__atomic__rmw16__sub_u:
+        case OpCode::I32__atomic__rmw__and:
+        case OpCode::I32__atomic__rmw8__and_u:
+        case OpCode::I32__atomic__rmw16__and_u:
+        case OpCode::I32__atomic__rmw__or:
+        case OpCode::I32__atomic__rmw8__or_u:
+        case OpCode::I32__atomic__rmw16__or_u:
+        case OpCode::I32__atomic__rmw__xor:
+        case OpCode::I32__atomic__rmw8__xor_u:
+        case OpCode::I32__atomic__rmw16__xor_u:
+        case OpCode::I32__atomic__rmw__xchg:
+        case OpCode::I32__atomic__rmw8__xchg_u:
+        case OpCode::I32__atomic__rmw16__xchg_u:
+        case OpCode::I32__atomic__rmw__cmpxchg:
+        case OpCode::I32__atomic__rmw8__cmpxchg_u:
+        case OpCode::I32__atomic__rmw16__cmpxchg_u: {
+          Builder.createStore(
+              Builder.createAdd(Builder.createLoad(Context.Int64Ty, LocalInstrCnt32IntOp),
+                      LLContext.getInt64(1)),
+              LocalInstrCnt32IntOp);
+
+          auto Store [[maybe_unused]] = Builder.createAtomicRMW(
+              LLVMAtomicRMWBinOpAdd, Context.getInstrCnt32IntOp(Builder, ExecCtx),
+              Builder.createLoad(Context.Int64Ty, LocalInstrCnt32IntOp),
+              LLVMAtomicOrderingMonotonic);
+#if LLVM_VERSION_MAJOR >= 13
+          Store.setAlignment(8);
+#endif
+          Builder.createStore(LLContext.getInt64(0), LocalInstrCnt32IntOp);
+          break;
+        }
+        case OpCode::I64__eqz:
+        case OpCode::I64__eq:
+        case OpCode::I64__ne:
+        case OpCode::I64__lt_s:
+        case OpCode::I64__lt_u:
+        case OpCode::I64__gt_s:
+        case OpCode::I64__gt_u:
+        case OpCode::I64__le_s:
+        case OpCode::I64__le_u:
+        case OpCode::I64__ge_s:
+        case OpCode::I64__ge_u:
+        case OpCode::F64__eq:
+        case OpCode::F64__ne:
+        case OpCode::F64__lt:
+        case OpCode::F64__gt:
+        case OpCode::F64__le:
+        case OpCode::F64__ge:
+        case OpCode::I64__clz:
+        case OpCode::I64__ctz:
+        case OpCode::I64__popcnt:
+        case OpCode::I64__add:
+        case OpCode::I64__sub:
+        case OpCode::I64__mul:
+        case OpCode::I64__div_s:
+        case OpCode::I64__div_u:
+        case OpCode::I64__rem_s:
+        case OpCode::I64__rem_u:
+        case OpCode::I64__and:
+        case OpCode::I64__or:
+        case OpCode::I64__xor:
+        case OpCode::I64__shl:
+        case OpCode::I64__shr_s:
+        case OpCode::I64__shr_u:
+        case OpCode::I64__rotl:
+        case OpCode::I64__rotr:
+        case OpCode::F64__abs:
+        case OpCode::F64__neg:
+        case OpCode::F64__ceil:
+        case OpCode::F64__floor:
+        case OpCode::F64__trunc:
+        case OpCode::F64__nearest:
+        case OpCode::F64__sqrt:
+        case OpCode::F64__add:
+        case OpCode::F64__sub:
+        case OpCode::F64__mul:
+        case OpCode::F64__div:
+        case OpCode::F64__min:
+        case OpCode::F64__max:
+        case OpCode::F64__copysign:
+        case OpCode::I64__extend_i32_s:
+        case OpCode::I64__extend_i32_u:
+        case OpCode::I64__trunc_f32_s:
+        case OpCode::I64__trunc_f32_u:
+        case OpCode::I64__trunc_f64_s:
+        case OpCode::I64__trunc_f64_u:
+        case OpCode::F64__convert_i32_s:
+        case OpCode::F64__convert_i32_u:
+        case OpCode::F64__convert_i64_s:
+        case OpCode::F64__convert_i64_u:
+        case OpCode::F64__promote_f32:
+        case OpCode::I64__reinterpret_f64:
+        case OpCode::F64__reinterpret_i64:
+        case OpCode::I64__extend8_s:
+        case OpCode::I64__extend16_s:
+        case OpCode::I64__extend32_s:
+        case OpCode::I64__trunc_sat_f32_s:
+        case OpCode::I64__trunc_sat_f32_u:
+        case OpCode::I64__trunc_sat_f64_s:
+        case OpCode::I64__trunc_sat_f64_u:
+        case OpCode::I64__atomic__load:
+        case OpCode::I64__atomic__load8_u:
+        case OpCode::I64__atomic__load16_u:
+        case OpCode::I64__atomic__load32_u:
+        case OpCode::I64__atomic__store:
+        case OpCode::I64__atomic__store8:
+        case OpCode::I64__atomic__store16:
+        case OpCode::I64__atomic__store32:
+        case OpCode::I64__atomic__rmw__add:
+        case OpCode::I64__atomic__rmw8__add_u:
+        case OpCode::I64__atomic__rmw16__add_u:
+        case OpCode::I64__atomic__rmw32__add_u:
+        case OpCode::I64__atomic__rmw__sub:
+        case OpCode::I64__atomic__rmw8__sub_u:
+        case OpCode::I64__atomic__rmw16__sub_u:
+        case OpCode::I64__atomic__rmw32__sub_u:
+        case OpCode::I64__atomic__rmw__and:
+        case OpCode::I64__atomic__rmw8__and_u:
+        case OpCode::I64__atomic__rmw16__and_u:
+        case OpCode::I64__atomic__rmw32__and_u:
+        case OpCode::I64__atomic__rmw__or:
+        case OpCode::I64__atomic__rmw8__or_u:
+        case OpCode::I64__atomic__rmw16__or_u:
+        case OpCode::I64__atomic__rmw32__or_u:
+        case OpCode::I64__atomic__rmw__xor:
+        case OpCode::I64__atomic__rmw8__xor_u:
+        case OpCode::I64__atomic__rmw16__xor_u:
+        case OpCode::I64__atomic__rmw32__xor_u:
+        case OpCode::I64__atomic__rmw__xchg:
+        case OpCode::I64__atomic__rmw8__xchg_u:
+        case OpCode::I64__atomic__rmw16__xchg_u:
+        case OpCode::I64__atomic__rmw32__xchg_u:
+        case OpCode::I64__atomic__rmw__cmpxchg:
+        case OpCode::I64__atomic__rmw8__cmpxchg_u:
+        case OpCode::I64__atomic__rmw16__cmpxchg_u:
+        case OpCode::I64__atomic__rmw32__cmpxchg_u: {
+          Builder.createStore(
+            Builder.createAdd(Builder.createLoad(Context.Int64Ty, LocalInstrCnt64IntOp),
+                      LLContext.getInt64(1)),
+              LocalInstrCnt64IntOp);
+
+          auto Store [[maybe_unused]] = Builder.createAtomicRMW(
+              LLVMAtomicRMWBinOpAdd, Context.getInstrCnt64IntOp(Builder, ExecCtx),
+              Builder.createLoad(Context.Int64Ty, LocalInstrCnt64IntOp),
+              LLVMAtomicOrderingMonotonic);
+#if LLVM_VERSION_MAJOR >= 13
+          Store.setAlignment(8);
+#endif
+          Builder.createStore(LLContext.getInt64(0), LocalInstrCnt64IntOp);
+          break;
+        }
+        default: {
+          Builder.createStore(
+            Builder.createAdd(Builder.createLoad(Context.Int64Ty, LocalInstrCntOther),
+                      LLContext.getInt64(1)),
+              LocalInstrCntOther);
+
+          auto Store [[maybe_unused]] = Builder.createAtomicRMW(
+    LLVMAtomicRMWBinOpAdd, Context.getInstrCntOther(Builder, ExecCtx),
+    Builder.createLoad(Context.Int64Ty, LocalInstrCntOther),
+    LLVMAtomicOrderingMonotonic);
+#if LLVM_VERSION_MAJOR >= 13
+          Store.setAlignment(8);
+#endif
+          Builder.createStore(LLContext.getInt64(0), LocalInstrCntOther);
+//auto Store [[maybe_unused]] = Builder.createAtomicRMW(
+//    LLVMAtomicRMWBinOpAdd, Context.getInstrCntOther(Builder, ExecCtx),
+//    Builder.createLoad(Context.Int64Ty, LLContext.getInt64(1)),
+//    LLVMAtomicOrderingMonotonic);
+//#if LLVM_VERSION_MAJOR >= 13
+//Store.setAlignment(8);
+//#endif
+          break;
+        }
+
+        }
+      }
+
       // Make the instruction node according to Code.
       Dispatch(Instr);
     }
@@ -5100,6 +5500,14 @@ private:
   std::vector<LLVM::Value> Stack;
   LLVM::Value LocalInstrCount = nullptr;
   LLVM::Value LocalGas = nullptr;
+
+  LLVM::Value LocalInstrCntReg = nullptr;
+  LLVM::Value LocalInstrCntMem = nullptr;
+  LLVM::Value LocalInstrCntControl = nullptr;
+  LLVM::Value LocalInstrCnt32IntOp = nullptr;
+  LLVM::Value LocalInstrCnt64IntOp = nullptr;
+  LLVM::Value LocalInstrCntOther = nullptr;
+
   std::unordered_map<ErrCode::Value, LLVM::BasicBlock> TrapBB;
   bool IsUnreachable = false;
   bool Interruptible = false;
@@ -5198,7 +5606,7 @@ Expect<void> outputNativeLibrary(const std::filesystem::path &OutputPath,
 #else
             "-sdk_version", SDKVersion.c_str(),
 #endif
-            "-dylib", "-demangle", "-macosx_version_min", OSVersion.c_str(),
+            "-lSystem", "-dylib", "-demangle", "-macosx_version_min", OSVersion.c_str(),
             "-syslibroot",
             "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
             ObjectName.u8string().c_str(), "-o",
